@@ -22,9 +22,8 @@ source_dir=$(find "$tmp/source" -mindepth 1 -maxdepth 1 -type d -print -quit)
 [ -n "$source_dir" ] || { echo 'Invalid project archive / 项目压缩包无效'; exit 1; }
 
 if [ -e "$INSTALL_DIR" ]; then
-  backup="$INSTALL_DIR.backup.$(date +%Y%m%d%H%M%S)"
-  mv "$INSTALL_DIR" "$backup"
-  echo "Previous installation moved to $backup / 旧版本已备份"
+  echo "Upgrading existing installation / 正在覆盖升级现有安装"
+  rm -rf -- "$INSTALL_DIR"
 fi
 mkdir -p "$(dirname "$INSTALL_DIR")"
 cp -a "$source_dir" "$INSTALL_DIR"
