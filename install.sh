@@ -32,4 +32,10 @@ chmod 755 "$INSTALL_DIR/vps-guard.sh"
 chmod 755 "$INSTALL_DIR/install.sh" 2>/dev/null || true
 echo "Installed at $INSTALL_DIR / 已安装到 $INSTALL_DIR"
 cd "$INSTALL_DIR"
-exec bash ./vps-guard.sh ui
+# When install.sh is piped from curl, stdin belongs to the pipe.
+# Read the interactive menu from the terminal instead.
+if [ -r /dev/tty ]; then
+  exec bash ./vps-guard.sh ui </dev/tty
+else
+  exec bash ./vps-guard.sh ui
+fi
