@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-REPO="${VPS_GUARD_REPO:-YOUR_GITHUB_USER/vps-guard}"
+REPO="${VPS_GUARD_REPO:-CharlesField19/vps-guard}"
 REF="${VPS_GUARD_REF:-main}"
 INSTALL_DIR="${VPS_GUARD_DIR:-/opt/vps-guard}"
 
