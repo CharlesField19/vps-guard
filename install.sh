@@ -34,7 +34,7 @@ cd "$INSTALL_DIR"
 # When install.sh is piped from curl, stdin belongs to the pipe.
 # Read the interactive menu from the terminal instead.
 if [ -r /dev/tty ]; then
-  exec bash ./vps-guard.sh ui </dev/tty
+  bash ./vps-guard.sh ui </dev/tty
 else
-  exec bash ./vps-guard.sh ui
+  bash ./vps-guard.sh ui
 fi

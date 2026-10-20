@@ -7,8 +7,6 @@ LANGUAGE=zh
 . "$BASE_DIR/lib/i18n.sh"
 # shellcheck source=lib/common.sh
 . "$BASE_DIR/lib/common.sh"
-# shellcheck source=lib/backup.sh
-. "$BASE_DIR/lib/backup.sh"
 # shellcheck disable=SC1090
 for file in "$BASE_DIR"/modules/audit/*.sh "$BASE_DIR"/modules/audit.sh "$BASE_DIR"/modules/harden/*.sh "$BASE_DIR"/modules/menu.sh; do
   [ -f "$file" ] && . "$file"
@@ -23,7 +21,6 @@ Usage:
   sudo bash vps-guard.sh audit [zh|en]
   sudo bash vps-guard.sh plan [zh|en]
   sudo bash vps-guard.sh harden ssh-root-password
-  sudo bash vps-guard.sh rollback
 EOF
 }
 
@@ -56,11 +53,6 @@ ui() {
   ui_main_menu
 }
 
-rollback() {
-  root_required || return 1
-  if rollback_latest; then echo 'Rollback complete / 回滚完成'; else echo 'No rollback available / 没有可用的回滚点'; return 1; fi
-}
-
 case "${1:-ui}" in
   ui) root_required && ui;;
   audit) [ "${2:-}" = en ] && LANGUAGE=en; root_required && audit_all;;
@@ -68,7 +60,6 @@ case "${1:-ui}" in
   harden)
     [ "${2:-}" = ssh-root-password ] || { usage; exit 2; }
     root_required && harden_ssh_root_password;;
-  rollback) rollback;;
   -h|--help|help) usage;;
   *) usage >&2; exit 2;;
 esac
