@@ -2,7 +2,7 @@
 
 [中文](README.md) | **English**
 
-A basic inspection and management tool for Ubuntu/Debian VPS instances. This guide explains what each menu item is for, what it reads or changes, and what to consider before using it—not just what the labels say. Read-only checks do not change the system. Actions that change system state generally show their target and require you to type `APPLY`.
+A basic inspection and management tool for Ubuntu/Debian VPS instances. This guide explains what each menu item is for, what it reads or changes, and what to consider before using it—not just what the labels say. Read-only checks do not change the system. Actions that change system state generally show their target and require `y` to confirm or `n` to cancel (case-insensitive).
 
 ## Menu-to-script map
 
@@ -12,7 +12,7 @@ A basic inspection and management tool for Ubuntu/Debian VPS instances. This gui
 | 2 SSH / firewall | Opens SSH/firewall submenu: status, port/socket, port-20001 shortcut, UFW rules | Inspect/configure |
 | 3 IPv6 | Shows interface/sysctl/UFW IPv6 status; sub-option 1 enables it | Inspect/configure |
 | 4 BBR / fq | Shows active/available algorithms and queue discipline; sub-option 1 enables them | Inspect/configure |
-| 5 Updates | Simulates `apt-get upgrade`; `APPLY` runs `apt-get update` and `apt-get upgrade -y` | Update |
+| 5 Updates | Simulates `apt-get upgrade`; `y` runs `apt-get update` and `apt-get upgrade -y` | Update |
 | 6 Services | Lists 9 fixed services and lets you inspect/start/stop/restart/reload the selection | Inspect/control |
 | 7 Listening ports | Runs `ss -H -tulpen` and labels all-address, loopback, or specific-address binds | Read-only |
 | 8 Fail2Ban | Shows jail/ban IPs, unbans an IP, or displays logs | Inspect/configure |
@@ -55,19 +55,19 @@ The SSH-port submenu has two options: 1 enter a new port from `1-65535`, allow i
 
 Displays IPv6 interface records, the kernel's IPv6 disable switches, and UFW's IPv6 setting. Enabling IPv6 writes `/etc/sysctl.d/99-vps-guard-ipv6.conf`, enables IPv6 on the VPS, and sets `IPV6=yes` when a UFW configuration is present. This only changes the guest system; it cannot provision IPv6 with your cloud provider. The provider must assign IPv6 addressing/routing, and its security group must also permit the desired traffic. Seeing an interface record does not guarantee public IPv6 connectivity.
 
-The menu repeatedly shows the status; option 1 enables IPv6 and requires `APPLY`, while 0 returns. The script runs `sysctl --system` and checks that `net.ipv6.conf.all.disable_ipv6=0`; if validation fails, written files remain and no automatic rollback occurs.
+The menu repeatedly shows the status; option 1 enables IPv6 and requires `y`, while 0 returns. The script runs `sysctl --system` and checks that `net.ipv6.conf.all.disable_ipv6=0`; if validation fails, written files remain and no automatic rollback occurs.
 
 ### 4. BBR / fq status and configuration
 
 Shows the active TCP congestion-control algorithm, algorithms reported by the kernel, and the default queue discipline. BBR is a Linux TCP congestion-control algorithm; `fq` is a packet queueing discipline commonly paired with it. They change TCP traffic handling, not your provisioned bandwidth, and will not fix every network issue. Enabling first checks that the kernel reports BBR support, then writes `/etc/sysctl.d/99-vps-guard-network.conf` and applies the settings immediately. If the kernel does not support BBR or validation fails, the configuration is not automatically rolled back; inspect the reported file and kernel support.
 
-Option 1 first checks that `bbr` appears among the available algorithms, then requires `APPLY`. Success is verified by checking that the active congestion control is `bbr` and the default queue is `fq`. Option 0 returns; no configuration is written when BBR is unavailable.
+Option 1 first checks that `bbr` appears among the available algorithms, then requires `y`. Success is verified by checking that the active congestion control is `bbr` and the default queue is `fq`. Option 0 returns; no configuration is written when BBR is unavailable.
 
 ### 5. Software and kernel updates
 
-For Ubuntu/Debian systems using APT. It first simulates `apt-get upgrade` using the local package index so you can review the expected package changes; the simulation neither accesses the network nor installs software. Only after you type `APPLY` does it run `apt-get update` to refresh package indexes and `apt-get upgrade -y` to install available upgrades. It does not run `full-upgrade`, which may remove packages, and it does not reboot automatically. A kernel update may require a manual reboot during a maintenance window. Keep the terminal and network connection available while updates run.
+For Ubuntu/Debian systems using APT. It first simulates `apt-get upgrade` using the local package index so you can review the expected package changes; the simulation neither accesses the network nor installs software. Only after you type `y` does it run `apt-get update` to refresh package indexes and `apt-get upgrade -y` to install available upgrades. It does not run `full-upgrade`, which may remove packages, and it does not reboot automatically. A kernel update may require a manual reboot during a maintenance window. Keep the terminal and network connection available while updates run.
 
-This is a single update flow rather than a looping submenu: type `APPLY` after the preview to run it, `0` to return, or anything else to cancel as an invalid choice. If `apt-get` or `apt-cache` is unavailable, it stops. After a successful update, the script checks `/var/run/reboot-required` and reports when a reboot is needed.
+This is a single update flow rather than a looping submenu: type `y` after the preview to run it, `n` or `0` to return, or anything else to cancel. If `apt-get` or `apt-cache` is unavailable, it stops. After a successful update, the script checks `/var/run/reboot-required` and reports when a reboot is needed.
 
 ### 6. Service management
 
@@ -86,9 +86,9 @@ Uses `ss` to show current TCP/UDP listeners, including IPv4/IPv6, bind address, 
 
 ### 8. Fail2Ban management
 
-Fail2Ban uses jails—rules watching a particular service or log source—to ban source IPs after repeated failures. The menu shows jail and ban status, displays a jail's status and banned IPs, unbans an IP from a selected jail, and shows Fail2Ban logs. Unbanning lets the IP try to connect again; verify both the jail and IP before typing `APPLY`. Logs may contain IP addresses and usernames.
+Fail2Ban uses jails—rules watching a particular service or log source—to ban source IPs after repeated failures. The menu shows jail and ban status, displays a jail's status and banned IPs, unbans an IP from a selected jail, and shows Fail2Ban logs. Unbanning lets the IP try to connect again; verify both the jail and IP, then enter `y` to confirm or `n` to cancel. Logs may contain IP addresses and usernames.
 
-Submenu numbering: 1 select a jail and display its status/banned IPs; 2 select a jail, enter an IP, and confirm the unban; 3 display the latest 80 Fail2Ban journal lines; 0 back. If the client is missing or the service cannot be reached, this feature reports that and returns.
+Submenu numbering: 1 select a jail and display its status/banned IPs; 2 select a jail, enter an IP, and confirm the unban; 3 display the latest 80 Fail2Ban journal lines; 4 install/ensure Fail2Ban is installed or upgrade only the installed version; 0 back. Installation/update first runs `apt-get update`, requires `y` (case-insensitive) to confirm, and then attempts to enable and start the service. Enter `n` or anything else to cancel. If the client is missing or the service cannot be reached, the menu remains available for option 4 while other operations report that Fail2Ban is unavailable.
 
 ### 9. Users and SSH keys
 
@@ -111,9 +111,9 @@ Number mapping: 1 SSH service logs; 2 Fail2Ban service logs; 3 kernel messages c
 
 ### 12. Docker management
 
-Shows all Docker containers, including stopped ones, with names, status, and port mappings. You can start, stop, or restart a selected container. A port mapping forwards a host port to a container port; a mapping bound to all addresses may be public, so also check the firewall and application authentication. Stop/restart interrupts the application. This menu does not edit container configuration, images, or volumes.
+Shows all Docker containers, including stopped ones, with names, status, and port mappings. You can start, stop, or restart a selected container. A port mapping forwards a host port to a container port; a mapping bound to all addresses may be public, so also check the firewall and application authentication. Stop/restart interrupts the application. This menu does not edit container configuration, images, or volumes. If Docker is unavailable, the menu remains available and option 2 can install/ensure Docker or upgrade installed Docker packages.
 
-The list is shown first. Option 1 enters container controls; select a container, then choose 1 start, 2 stop, or 3 restart. After confirmation, only the selected container is affected. Option 0 returns to the previous menu.
+The list is shown first. Option 1 enters container controls; select a container, then choose 1 start, 2 stop, or 3 restart. Option 2 offers install/ensure-installed or upgrade-only actions. Installation/update first runs `apt-get update`, installs `docker.io` by default and also `docker-compose-plugin` when available from the configured package sources, requires `y` (case-insensitive) to confirm, and then attempts to enable and start Docker. Enter `n` or anything else to cancel. After confirmation, only the selected container is affected. Option 0 returns to the previous menu.
 
 ### 13. Scheduled task management
 
@@ -126,7 +126,7 @@ Menu numbering: 1 add a Cron line; 2 delete the selected line; 0 back. The syste
 
 ### 14. Safe cleanup
 
-Each cleanup shows its target or current usage first and requires `APPLY`. Cleanup cannot be automatically undone by this tool:
+Each cleanup shows its target or current usage first and requires `y` to confirm. Enter `n` or anything else to cancel. Cleanup cannot be automatically undone by this tool:
 
 - **APT cache**: Removes downloaded package files to free disk space. Installed software is not uninstalled, but future installs/upgrades may need to download those files again.
 - **Rotated systemd journals**: Reduces journal storage to the size limit you enter (for example, `200M`). Older records may be removed, limiting historical troubleshooting.
@@ -180,7 +180,7 @@ The default installation path is `/opt/vps-guard`, and the menu opens after inst
 ## General notes
 
 - Root access is required. Ubuntu/Debian systems using APT are the primary target. Some features require the relevant software/commands to be installed (for example UFW, Fail2Ban, Docker, or systemd).
-- Start with the information audit. Any action that changes system state requires the confirmation word `APPLY`; other input does not confirm it.
+- Start with the information audit. For any action that changes system state, enter `y` (case-insensitive) to confirm; enter `n` or anything else to cancel.
 - SSH, firewall, and network changes may disconnect remote access. Ensure a VPS console or rescue path is available first. After changing the SSH port, test login from a second terminal before manually considering removal of the old port rule.
 - The script does not automatically back up or roll back configuration. Verify targets and impacts before updates, cleanup, or account changes; make your own backups of important data and configuration.
 - Updates do not reboot automatically. After updating, check whether the system requires a reboot.

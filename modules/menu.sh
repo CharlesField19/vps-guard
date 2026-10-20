@@ -115,8 +115,8 @@ ui_ipv6_menu() {
     case "$choice" in
       1)
         printf '%s\n' "$(ui_text '这只启用本机 IPv6 和 UFW IPv6 支持；云厂商必须同时提供 IPv6 网络。' 'This enables local IPv6 and UFW IPv6 support; the cloud provider must also provide IPv6 networking.')"
-        read -r -p "$(ui_text '输入 APPLY 继续：' 'Type APPLY to continue: ')" confirm
-        [ "$confirm" = APPLY ] || { say cancel; continue; }
+        read -r -p "$(ui_text '确认执行？输入 y/n：' 'Confirm? Enter y/n: ')" confirm
+        is_yes "$confirm" || { say cancel; continue; }
         root_required || continue
         mkdir -p /etc/sysctl.d
         cat > /etc/sysctl.d/99-vps-guard-ipv6.conf <<'EOF'
@@ -159,8 +159,8 @@ ui_bbr_menu() {
       1)
         available=$(sysctl -n net.ipv4.tcp_available_congestion_control 2>/dev/null || true)
         case " $available " in *' bbr '*) ;; *) printf '%s\n' "$(ui_text '当前内核不报告 BBR 可用，未修改配置。' 'The current kernel does not report BBR as available; no changes made.')"; ui_pause; continue ;; esac
-        read -r -p "$(ui_text '输入 APPLY 继续：' 'Type APPLY to continue: ')" confirm
-        [ "$confirm" = APPLY ] || { say cancel; continue; }
+        read -r -p "$(ui_text '确认执行？输入 y/n：' 'Confirm? Enter y/n: ')" confirm
+        is_yes "$confirm" || { say cancel; continue; }
         root_required || continue
         mkdir -p /etc/sysctl.d
          cat > /etc/sysctl.d/99-vps-guard-network.conf <<'EOF'
@@ -205,8 +205,8 @@ ui_users_keys_menu() {
         if id "$username" >/dev/null 2>&1; then printf '%s\n' "$(ui_text '用户已存在。' 'User already exists.')"; continue; fi
         read -r -p "$(ui_text '是否加入 sudo 组？输入 y 或 n：' 'Add to sudo group? Type y or n: ')" confirm
         case "$confirm" in y|Y) add_to_sudo=yes ;; n|N) add_to_sudo=no ;; *) printf '%s\n' "$(ui_text '请输入 y 或 n。' 'Please enter y or n.')"; continue ;; esac
-        read -r -p "$(ui_text '输入 APPLY 创建用户：' 'Type APPLY to create the user: ')" confirm
-        [ "$confirm" = APPLY ] || { say cancel; continue; }
+        read -r -p "$(ui_text '确认创建？输入 y/n：' 'Confirm creation? Enter y/n: ')" confirm
+        is_yes "$confirm" || { say cancel; continue; }
         if useradd -m -s /bin/bash "$username"; then
           if [ "$add_to_sudo" = yes ]; then
             if usermod -aG sudo "$username"; then
@@ -230,8 +230,8 @@ ui_users_keys_menu() {
         read -r key_type key_data _ <<< "$key"
         case "$key_type" in ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521|sk-ssh-ed25519@openssh.com|sk-ecdsa-sha2-nistp256@openssh.com) ;; *) printf '%s\n' "$(ui_text '不支持或无效的公钥类型。' 'Unsupported or invalid public key type.')"; continue ;; esac
         if [ -z "$key_data" ] || ! [[ "$key_data" =~ ^[A-Za-z0-9+/]+={0,2}$ ]]; then printf '%s\n' "$(ui_text '公钥数据格式无效。' 'Invalid public key data.')"; continue; fi
-        read -r -p "$(ui_text '输入 APPLY 写入公钥：' 'Type APPLY to write the key: ')" confirm
-        [ "$confirm" = APPLY ] || { say cancel; continue; }
+        read -r -p "$(ui_text '确认写入？输入 y/n：' 'Confirm write? Enter y/n: ')" confirm
+        is_yes "$confirm" || { say cancel; continue; }
         home=$(getent passwd "$username" | cut -d: -f6)
         user_group=$(id -gn "$username")
         if [ -z "$home" ] || [ ! -d "$home" ]; then printf '%s\n' "$(ui_text '用户主目录不存在。' 'The user home directory does not exist.')"; continue; fi
@@ -315,33 +315,31 @@ ui_listening_ports() {
 }
 
 ui_fail2ban_menu() {
-  local choice status_text jail_index jail ip confirm jail_csv
+  local choice status_text jail_index jail ip confirm jail_csv package_action
   local -a jails=()
-  if ! have fail2ban-client; then
-    printf '%s\n' "$(ui_text '未安装 Fail2Ban 客户端。' 'Fail2Ban client is not installed.')"
-    ui_pause
-    return 1
-  fi
-  if ! fail2ban-client ping >/dev/null 2>&1; then
-    printf '%s\n' "$(ui_text 'Fail2Ban 服务未运行或客户端无法连接。' 'Fail2Ban service is not running or the client cannot connect.')"
-    ui_pause
-    return 1
-  fi
-  status_text=$(fail2ban-client status 2>/dev/null) || { printf '%s\n' "$(ui_text '读取 Fail2Ban 状态失败。' 'Failed to read Fail2Ban status.')"; return 1; }
-  printf '\n%s\n' "$status_text"
-  jail_csv=$(printf '%s\n' "$status_text" | sed -n 's/^[[:space:]]*Jail list:[[:space:]]*//p' | tail -n 1)
-  if [ -n "$jail_csv" ]; then
-    IFS=',' read -r -a jails <<< "$jail_csv"
-  fi
   while true; do
+    jails=()
+    if have fail2ban-client && fail2ban-client ping >/dev/null 2>&1; then
+      status_text=$(fail2ban-client status 2>/dev/null || true)
+      printf '\n%s\n' "$status_text"
+      jail_csv=$(printf '%s\n' "$status_text" | sed -n 's/^[[:space:]]*Jail list:[[:space:]]*//p' | tail -n 1)
+      if [ -n "$jail_csv" ]; then IFS=',' read -r -a jails <<< "$jail_csv"; fi
+    else
+      printf '%s\n' "$(ui_text 'Fail2Ban 未安装、未运行或客户端无法连接。可用选项 4 安装/更新。' 'Fail2Ban is not installed, not running, or unreachable. Use option 4 to install/update it.')"
+    fi
     printf '%s\n' \
       "1) $(ui_text '查看 Jail 状态和封禁 IP' 'View jail status and banned IPs')" \
       "2) $(ui_text '解封 IP' 'Unban an IP')" \
       "3) $(ui_text '查看 Fail2Ban 日志' 'View Fail2Ban logs')" \
+      "4) $(ui_text '安装/更新 Fail2Ban' 'Install/update Fail2Ban')" \
       "0) $(ui_text '返回主菜单' 'Back to main menu')"
     read -r -p '> ' choice || return
     case "$choice" in
       1|2)
+        if ! have fail2ban-client || ! fail2ban-client ping >/dev/null 2>&1; then
+          printf '%s\n' "$(ui_text 'Fail2Ban 当前不可用，请先执行选项 4。' 'Fail2Ban is unavailable; run option 4 first.')"
+          continue
+        fi
         if [ "${#jails[@]}" -eq 0 ]; then
           printf '%s\n' "$(ui_text '当前没有启用的 Jail。' 'No jails are currently enabled.')"
           continue
@@ -361,13 +359,37 @@ ui_fail2ban_menu() {
           case "$ip" in ''|*[!0-9a-fA-F:.]*) printf '%s\n' "$(ui_text 'IP 格式无效。' 'Invalid IP format.')"; continue ;; esac
           case "$ip" in *.*|*:* ) ;; *) printf '%s\n' "$(ui_text 'IP 格式无效。' 'Invalid IP format.')"; continue ;; esac
           printf '%s\n' "$(ui_text "将从 $jail 解封 $ip。" "About to unban $ip from $jail.")"
-          read -r -p "$(ui_text '输入 APPLY 确认：' 'Type APPLY to confirm: ')" confirm
-          [ "$confirm" = APPLY ] || { say cancel; continue; }
+          read -r -p "$(ui_text '确认解封？输入 y/n：' 'Confirm unban? Enter y/n: ')" confirm
+          is_yes "$confirm" || { say cancel; continue; }
           fail2ban-client set "$jail" unbanip "$ip" || printf '%s\n' "$(ui_text '解封失败。' 'Unban failed.')"
         fi
         ;;
       3)
         if have journalctl; then journalctl -u fail2ban --no-pager -n 80; else printf '%s\n' "$(ui_text 'journalctl 不可用。' 'journalctl is unavailable.')"; fi
+        ui_pause
+        ;;
+      4)
+        if ! root_required || ! have apt-get; then continue; fi
+        printf '%s\n' \
+          "1) $(ui_text '安装/确保已安装' 'Install/ensure installed')" \
+          "2) $(ui_text '仅更新已安装版本' 'Upgrade installed package only')" \
+          "0) $(ui_text '返回' 'Back')"
+        read -r -p '> ' package_action || return
+        case "$package_action" in
+          1) package_action=install ;;
+          2) package_action=upgrade ;;
+          0) continue ;;
+          *) printf '%s\n' "$(ui_text '无效选择。' 'Invalid choice.')"; continue ;;
+        esac
+        printf '%s\n' "$(ui_text '将先更新软件索引，然后执行所选的 Fail2Ban 软件包操作。' 'The package index will be refreshed, then the selected Fail2Ban package action will run.')"
+        read -r -p "$(ui_text '确认安装/更新？输入 y/n：' 'Confirm install/update? Enter y/n: ')" confirm
+        is_yes "$confirm" || { say cancel; continue; }
+        if apt-get update && { [ "$package_action" = install ] && apt-get install -y fail2ban || [ "$package_action" = upgrade ] && apt-get install --only-upgrade -y fail2ban; }; then
+          systemctl enable --now fail2ban 2>/dev/null || true
+          printf '%s\n' "$(ui_text 'Fail2Ban 安装/更新完成；已尝试启用并启动服务。' 'Fail2Ban install/update completed; the service was enabled and started when possible.')"
+        else
+          printf '%s\n' "$(ui_text 'Fail2Ban 安装/更新失败，请检查上方 APT 输出。' 'Fail2Ban install/update failed; review the APT output above.')"
+        fi
         ui_pause
         ;;
       0) return ;;
@@ -402,6 +424,7 @@ ui_service_menu() {
     fi
     service=${services[$((choice - 1))]}
     printf '\n%s\n' "$(ui_text "当前服务：$service" "Selected service: $service")"
+    printf '%s\n' "$(ui_text '启动会启动服务；停止会中断服务；重启会先停止再启动；重载通常重新读取配置而不完全停止。服务不支持 reload 时该操作会失败。0 返回服务列表。' 'Start activates a service; stop interrupts it; restart stops then starts it; reload usually rereads configuration without a full stop. Unsupported reload actions fail. 0 returns to the service list.')"
     systemctl status --no-pager --lines=12 "$service" 2>&1 || true
     printf '%s\n' \
       "1) $(ui_text '仅查看状态' 'Show status only')" \
@@ -422,8 +445,8 @@ ui_service_menu() {
     if [ "$action" = stop ] && { [ "$service" = ssh ] || [ "$service" = ssh.socket ] || [ "$service" = ufw ]; }; then
       printf '%s\n' "$(ui_text '高风险：停止 SSH/UFW 可能导致远程失联或暴露服务。' 'High risk: stopping SSH/UFW may disconnect you or expose services.')"
     fi
-    read -r -p "$(ui_text '输入 APPLY 确认：' 'Type APPLY to confirm: ')" confirm
-    [ "$confirm" = APPLY ] || { say cancel; continue; }
+    read -r -p "$(ui_text '确认执行？输入 y/n：' 'Confirm? Enter y/n: ')" confirm
+    is_yes "$confirm" || { say cancel; continue; }
     if systemctl "$action" "$service"; then
       printf '%s\n' "$(ui_text '服务操作已完成。' 'Service action completed.')"
     else
@@ -456,6 +479,8 @@ ui_ssh_firewall_menu() {
 }
 
 ui_ssh_port_status() {
+  # Show both parsed sshd configuration and live listeners. On systems using
+  # socket activation, the socket unit can keep listening on a different port.
   printf '\n%s\n' "$(ui_text 'SSH 有效端口配置：' 'Effective SSH port configuration:')"
   if have sshd; then sshd -T 2>/dev/null | grep '^port ' || true; else printf '%s\n' 'sshd unavailable / 未发现 sshd'; fi
   if have systemctl; then
@@ -493,8 +518,8 @@ ui_ssh_port_menu() {
           continue
         fi
         printf '%s\n' "$(ui_text '操作会先放行新端口，并保留 22 以便测试；不会自动关闭 22。' 'The new port will be allowed and 22 will be kept for testing; port 22 will not be closed automatically.')"
-        read -r -p "$(ui_text '输入 APPLY 确认：' 'Type APPLY to confirm: ')" confirm
-        [ "$confirm" = APPLY ] || { say cancel; continue; }
+        read -r -p "$(ui_text '确认执行？输入 y/n：' 'Confirm? Enter y/n: ')" confirm
+        is_yes "$confirm" || { say cancel; continue; }
 
         socket_active=0
         systemctl is-active --quiet ssh.socket 2>/dev/null && socket_active=1
@@ -572,6 +597,7 @@ ui_ufw_rules_menu() {
 
   while true; do
     printf '\n%s\n' "$(ui_text 'UFW 端口规则管理' 'UFW port rules')"
+    printf '%s\n' "$(ui_text 'UFW 是 Linux 主机防火墙。新增规则只允许网络流量通过防火墙，不会启动对应应用；删除规则可能让远程服务无法访问。' 'UFW is the Linux host firewall. Adding a rule only permits traffic through the firewall; it does not start an application. Removing a rule can make a remote service unreachable.')"
     ufw status verbose 2>/dev/null || true
     printf '%s\n' \
       "1) $(ui_text '新增端口放行规则' 'Add an allow rule')" \
@@ -609,8 +635,8 @@ ui_ufw_rules_menu() {
           *) printf '%s\n' "$(ui_text '无效协议选择。' 'Invalid protocol choice.')"; continue ;;
         esac
         printf '%s\n' "$(ui_text "即将放行端口 $port/$protocol。" "About to allow port $port/$protocol.")"
-        read -r -p "$(ui_text '输入 APPLY 确认：' 'Type APPLY to confirm: ')" confirm
-        [ "$confirm" = APPLY ] || { say cancel; continue; }
+        read -r -p "$(ui_text '确认删除？输入 y/n：' 'Confirm deletion? Enter y/n: ')" confirm
+        is_yes "$confirm" || { say cancel; continue; }
         if [ "$protocol" = both ]; then
           if ! ufw allow "$port/tcp" || ! ufw allow "$port/udp"; then
             printf '%s\n' "$(ui_text '添加规则失败；未自动回滚，可能已有部分规则生效。' 'Adding rules failed; no automatic rollback was performed, and a partial rule may have been applied.')"
@@ -625,6 +651,7 @@ ui_ufw_rules_menu() {
         ui_pause
         ;;
       2)
+        printf '%s\n' "$(ui_text '删除规则前先核对编号、端口和协议；输入 0 返回，不会删除。确认处输入 y 执行，输入 n 取消。' 'Check the rule number, port and protocol before deleting; enter 0 to return without deleting. Enter y to confirm or n to cancel.')"
         rules=$(ufw status numbered 2>/dev/null) || { printf '%s\n' "$(ui_text '无法读取 UFW 规则。' 'Unable to read UFW rules.')"; continue; }
         printf '%s\n' "$rules"
         if ! printf '%s\n' "$rules" | grep -Eq '^\[[[:space:]]*[0-9]+\]'; then
@@ -638,8 +665,8 @@ ui_ufw_rules_menu() {
           printf '%s\n' "$(ui_text '找不到该规则编号。' 'Rule number not found.')"
           continue
         fi
-        read -r -p "$(ui_text '输入 APPLY 确认删除该规则：' 'Type APPLY to confirm deleting this rule: ')" confirm
-        [ "$confirm" = APPLY ] || { say cancel; continue; }
+        read -r -p "$(ui_text '确认删除该规则？输入 y/n：' 'Confirm deleting this rule? Enter y/n: ')" confirm
+        is_yes "$confirm" || { say cancel; continue; }
         if ufw --force delete "$rule_no"; then
           printf '%s\n' "$(ui_text '规则已删除。' 'Rule deleted.')"
         else
@@ -660,8 +687,8 @@ ui_ufw_rules_menu() {
           printf '%s\n' "$(ui_text '警告：此操作可能暴露服务或中断 VPS 网络访问。' 'Warning: this may expose services or interrupt VPS network access.')"
         fi
         printf '%s\n' "$(ui_text '将执行所选 UFW 操作。' 'The selected UFW operation will be applied.')"
-        read -r -p "$(ui_text '输入 APPLY 确认：' 'Type APPLY to confirm: ')" confirm
-        [ "$confirm" = APPLY ] || { say cancel; continue; }
+        read -r -p "$(ui_text '确认执行？输入 y/n：' 'Confirm? Enter y/n: ')" confirm
+        is_yes "$confirm" || { say cancel; continue; }
         if "${ufw_cmd[@]}"; then
           printf '%s\n' "$(ui_text 'UFW 设置已更新。' 'UFW setting updated.')"
         else
@@ -691,11 +718,12 @@ ui_apply_ssh_firewall() {
     return 1
   fi
 
+  printf '%s\n' "$(ui_text '此快捷设置会放行 20001/80/443 TCP、设 UFW 入站默认拒绝/出站允许，并将 sshd_config 端口设为 20001。它不删除旧端口规则；若 ssh.socket 正在运行，本功能会停止并提示使用 SSH socket 管理。配置不会备份或自动回滚。' 'This shortcut allows TCP 20001/80/443, sets UFW incoming deny/outgoing allow and sets sshd_config to port 20001. It does not remove old rules. If ssh.socket is active, it stops and directs you to the socket manager. No backup or automatic rollback is made.')"
   printf '\n%s\n' "$(ui_text '将执行：允许 20001、80、443；设置 UFW 入站默认拒绝、出站允许；将 SSH 监听端口设为 20001。' 'Planned: allow 20001, 80 and 443; set UFW default incoming deny and outgoing allow; set SSH to listen on port 20001.')"
   printf '%s\n' "$(ui_text '旧 SSH 端口规则不会在本次操作中删除。请从第二个终端验证 20001 登录成功后，再手动清理旧规则。' 'The old SSH port rule will not be removed in this operation. Verify port 20001 from a second terminal before cleaning up the old rule.')"
   printf '%s\n' "$(ui_text '风险：高；可能影响远程访问。确认 VPS 控制台/救援入口可用。' 'Risk: HIGH; remote access may be affected. Confirm that a VPS console/rescue path is available.')"
-  read -r -p "$(ui_text '输入 APPLY 继续：' 'Type APPLY to continue: ')" confirm
-  [ "$confirm" = APPLY ] || { printf '%s\n' "$(msg cancel)"; return 1; }
+  read -r -p "$(ui_text '确认应用？输入 y/n：' 'Confirm apply? Enter y/n: ')" confirm
+  is_yes "$confirm" || { printf '%s\n' "$(msg cancel)"; return 1; }
 
   if ! ufw allow 20001/tcp || ! ufw allow 80/tcp || ! ufw allow 443/tcp; then
     printf '%s\n' "$(ui_text 'UFW 规则设置失败；未自动回滚，请检查当前规则。' 'Failed to set UFW rules; no automatic rollback was performed. Check the current rules.')"
@@ -731,23 +759,28 @@ ui_apply_ssh_firewall() {
 }
 
 ui_docker_menu() {
-  local choice containers selection container_id container_name action confirm
+  local choice containers selection container_id container_name action confirm package_action
+  local -a packages=()
   local -a container_rows=()
-  if ! have docker || ! docker info >/dev/null 2>&1; then
-    printf '%s\n' "$(ui_text 'Docker 未安装，或守护进程不可用。' 'Docker is not installed or the daemon is unavailable.')"
-    ui_pause
-    return 1
-  fi
   while true; do
-    printf '\n%s\n' "$(ui_text '容器列表（包含端口映射）' 'Containers (including port mappings)')"
-    docker ps -a --format 'table {{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Ports}}'
+    if have docker && docker info >/dev/null 2>&1; then
+      printf '\n%s\n' "$(ui_text '容器列表（包含端口映射）' 'Containers (including port mappings)')"
+      docker ps -a --format 'table {{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Ports}}'
+    else
+      printf '%s\n' "$(ui_text 'Docker 未安装，或守护进程不可用。可用选项 2 安装/更新。' 'Docker is not installed or the daemon is unavailable. Use option 2 to install/update it.')"
+    fi
     printf '%s\n' \
       "1) $(ui_text '操作容器（启动/停止/重启）' 'Control a container (start/stop/restart)')" \
+      "2) $(ui_text '安装/更新 Docker' 'Install/update Docker')" \
       "0) $(ui_text '返回主菜单' 'Back to main menu')"
     read -r -p '> ' choice || return
     case "$choice" in
       0) return ;;
       1)
+        if ! have docker || ! docker info >/dev/null 2>&1; then
+          printf '%s\n' "$(ui_text 'Docker 当前不可用，请先执行选项 2。' 'Docker is unavailable; run option 2 first.')"
+          continue
+        fi
         containers=$(docker ps -a --format '{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Ports}}') || continue
         container_rows=()
         while IFS= read -r selection; do [ -n "$selection" ] && container_rows+=("$selection"); done <<< "$containers"
@@ -766,9 +799,46 @@ ui_docker_menu() {
         read -r -p '> ' action || return
         case "$action" in 1) action=start ;; 2) action=stop ;; 3) action=restart ;; 0) continue ;; *) printf '%s\n' "$(ui_text '无效选择。' 'Invalid choice.')"; continue ;; esac
         printf '%s\n' "$(ui_text "将对容器 $container_name 执行 $action。" "About to $action container $container_name.")"
-        read -r -p "$(ui_text '输入 APPLY 确认：' 'Type APPLY to confirm: ')" confirm
-        [ "$confirm" = APPLY ] || { say cancel; continue; }
+        read -r -p "$(ui_text '确认容器操作？输入 y/n：' 'Confirm container action? Enter y/n: ')" confirm
+        is_yes "$confirm" || { say cancel; continue; }
         if docker "$action" "$container_id"; then printf '%s\n' "$(ui_text '容器操作完成。' 'Container action completed.')"; else printf '%s\n' "$(ui_text '容器操作失败。' 'Container action failed.')"; fi
+        ui_pause
+        ;;
+      2)
+        if ! root_required || ! have apt-get || ! have apt-cache; then continue; fi
+        printf '%s\n' \
+          "1) $(ui_text '安装/确保已安装' 'Install/ensure installed')" \
+          "2) $(ui_text '仅更新已安装版本' 'Upgrade installed packages only')" \
+          "0) $(ui_text '返回' 'Back')"
+        read -r -p '> ' package_action || return
+        case "$package_action" in
+          1) package_action=install ;;
+          2) package_action=upgrade ;;
+          0) continue ;;
+          *) printf '%s\n' "$(ui_text '无效选择。' 'Invalid choice.')"; continue ;;
+        esac
+        packages=(docker.io)
+        apt-cache show docker-compose-plugin >/dev/null 2>&1 && packages+=(docker-compose-plugin)
+        if [ "$package_action" = install ]; then
+          printf '%s\n' "$(ui_text '将安装 Docker：' 'Docker packages to install:') ${packages[*]}"
+        else
+          printf '%s\n' "$(ui_text '将仅更新已安装的 Docker 软件包：' 'Docker packages to upgrade if installed:') ${packages[*]}"
+        fi
+        read -r -p "$(ui_text '确认安装/更新？输入 y/n：' 'Confirm install/update? Enter y/n: ')" confirm
+        is_yes "$confirm" || { say cancel; continue; }
+        if apt-get update; then
+          if [ "$package_action" = install ]; then
+            apt-get install -y "${packages[@]}"
+          else
+            apt-get install --only-upgrade -y "${packages[@]}"
+          fi
+          if [ "$?" -eq 0 ]; then
+            systemctl enable --now docker 2>/dev/null || true
+            printf '%s\n' "$(ui_text 'Docker 安装/更新完成；已尝试启用并启动 Docker 服务。' 'Docker install/update completed; the Docker service was enabled and started when possible.')"
+          else
+            printf '%s\n' "$(ui_text 'Docker 安装/更新失败，请检查上方 APT 输出。' 'Docker install/update failed; review the APT output above.')"
+          fi
+        fi
         ui_pause
         ;;
       *) printf '%s\n' "$(ui_text '无效选择。' 'Invalid choice.')" ;;
@@ -786,6 +856,7 @@ ui_scheduled_menu() {
   fi
   while true; do
     printf '\n%s\n' "$(ui_text 'root 用户的 Cron 定时任务' 'Root user Cron jobs')"
+    printf '%s\n' "$(ui_text 'Cron 任务由系统按设定时间自动执行。新增前核对时间表达式和命令；这里仅管理 root 用户 crontab，不改其他用户任务。' 'Cron jobs run commands automatically on a schedule. Check the schedule and command carefully; this menu manages only root crontab, not other users.')"
     if have crontab; then
       crontab_text=$(crontab -l 2>/dev/null || true)
       if [ -n "$crontab_text" ]; then printf '%s\n' "$crontab_text" | nl -ba; else printf '%s\n' "$(ui_text '当前没有 root crontab。' 'No root crontab is configured.')"; fi
@@ -803,8 +874,8 @@ ui_scheduled_menu() {
         read -r -p "$(ui_text '输入完整 Cron 行（5 个时间字段 + 命令）：' 'Enter a full Cron line (5 schedule fields + command): ')" job
         if ! printf '%s\n' "$job" | awk 'NF >= 6 {ok=1} END {exit !ok}'; then printf '%s\n' "$(ui_text '格式看起来不完整，必须含 5 个时间字段和命令。' 'The line looks incomplete; it must contain 5 schedule fields and a command.')"; continue; fi
         printf '%s\n' "$(ui_text '即将添加：' 'About to add:')" "$job"
-        read -r -p "$(ui_text '输入 APPLY 确认：' 'Type APPLY to confirm: ')" confirm
-        [ "$confirm" = APPLY ] || { say cancel; continue; }
+        read -r -p "$(ui_text '确认添加？输入 y/n：' 'Confirm add? Enter y/n: ')" confirm
+        is_yes "$confirm" || { say cancel; continue; }
         if [ -n "$crontab_text" ]; then
           if printf '%s\n%s\n' "$crontab_text" "$job" | crontab -; then printf '%s\n' "$(ui_text 'Cron 任务已添加。' 'Cron job added.')"; else printf '%s\n' "$(ui_text '添加失败。' 'Add failed.')"; fi
         elif printf '%s\n' "$job" | crontab -; then
@@ -815,6 +886,7 @@ ui_scheduled_menu() {
         ;;
       2)
         if ! root_required || ! have crontab || [ -z "$crontab_text" ]; then continue; fi
+        printf '%s\n' "$(ui_text '删除的是 root crontab 中对应的单行任务；输入 0 返回。取消确认不会更改 crontab。' 'This deletes one selected line from root crontab; enter 0 to return. Cancelling leaves crontab unchanged.')"
         read -r -p "$(ui_text '输入要删除的行号（0 返回）：' 'Line number to delete (0 to return): ')" line_no
         [ "$line_no" = 0 ] && continue
         case "$line_no" in ''|*[!0-9]*) printf '%s\n' "$(ui_text '行号无效。' 'Invalid line number.')"; continue ;; esac
@@ -822,8 +894,8 @@ ui_scheduled_menu() {
         if [ "$line_no" -lt 1 ] || [ "$line_no" -gt "$total" ]; then printf '%s\n' "$(ui_text '行号超出范围。' 'Line number is out of range.')"; continue; fi
         printf '%s\n' "$(ui_text '将删除此任务行：' 'The following Cron line will be deleted:')"
         printf '%s\n' "$crontab_text" | sed -n "${line_no}p"
-        read -r -p "$(ui_text '输入 APPLY 确认：' 'Type APPLY to confirm: ')" confirm
-        [ "$confirm" = APPLY ] || { say cancel; continue; }
+        read -r -p "$(ui_text '确认删除？输入 y/n：' 'Confirm deletion? Enter y/n: ')" confirm
+        is_yes "$confirm" || { say cancel; continue; }
         if printf '%s\n' "$crontab_text" | awk -v n="$line_no" 'NR != n' | crontab -; then printf '%s\n' "$(ui_text 'Cron 行已删除。' 'Cron line deleted.')"; else printf '%s\n' "$(ui_text '删除失败。' 'Delete failed.')"; fi
         ;;
       0) return ;;
@@ -847,36 +919,40 @@ ui_cleanup_menu() {
     [ "$choice" = 0 ] && return
     case "$choice" in
       1)
+        printf '%s\n' "$(ui_text 'APT 缓存是 apt 下载的软件包安装文件，清理它可释放磁盘空间；不会卸载已安装软件，但之后重新安装/升级时可能需要重新下载。' 'The APT cache stores downloaded package files. Cleaning it frees disk space; it does not uninstall installed software, but later installs/upgrades may need to download packages again.')"
         if ! have apt-get; then printf '%s\n' 'apt-get unavailable / apt-get 不可用'; continue; fi
         size=$(du -sh /var/cache/apt/archives 2>/dev/null | awk '{print $1}')
         printf '%s\n' "$(ui_text "将清理 APT 缓存，当前约 $size。" "APT cache to clean, currently about $size.")"
-        read -r -p "$(ui_text '输入 APPLY 确认：' 'Type APPLY to confirm: ')" confirm
-        [ "$confirm" = APPLY ] || { say cancel; continue; }
+        read -r -p "$(ui_text '确认执行？输入 y/n：' 'Confirm? Enter y/n: ')" confirm
+        is_yes "$confirm" || { say cancel; continue; }
         apt-get clean
         ;;
       2)
+        printf '%s\n' "$(ui_text 'systemd 日志真空清理会按指定上限删除较旧日志；可能失去排查历史问题所需的记录。' 'Vacuuming systemd journals removes older logs to meet the selected size limit; historical troubleshooting records may be lost.')"
         if ! have journalctl; then printf '%s\n' 'journalctl unavailable / journalctl 不可用'; continue; fi
         journalctl --disk-usage 2>/dev/null || true
         read -r -p "$(ui_text '输入保留大小（如 200M）：' 'Maximum size to keep (for example 200M): ')" size
         if ! [[ "$size" =~ ^[0-9]+[KkMmGgTt]?$ ]]; then printf '%s\n' "$(ui_text '大小格式无效。' 'Invalid size format.')"; continue; fi
-        read -r -p "$(ui_text '输入 APPLY 确认：' 'Type APPLY to confirm: ')" confirm
-        [ "$confirm" = APPLY ] || { say cancel; continue; }
+        read -r -p "$(ui_text '确认执行？输入 y/n：' 'Confirm? Enter y/n: ')" confirm
+        is_yes "$confirm" || { say cancel; continue; }
         journalctl --vacuum-size="$size"
         ;;
       3)
+        printf '%s\n' "$(ui_text '已停止容器可能含有未写入卷的容器内数据；删除后通常无法恢复。卷和运行中容器不会由此操作删除。' 'Stopped containers may contain data outside volumes; deleting them is usually irreversible. Volumes and running containers are not targeted.')"
         if ! have docker || ! docker info >/dev/null 2>&1; then printf '%s\n' "$(ui_text 'Docker 不可用。' 'Docker is unavailable.')"; continue; fi
         printf '%s\n' "$(ui_text '以下已停止容器将被删除（容器可写层数据也会丢失）：' 'These stopped containers will be removed (writable-layer data will be lost):')"
         docker ps -a --filter status=exited --filter status=created --format 'table {{.ID}}\t{{.Names}}\t{{.Status}}'
-        read -r -p "$(ui_text '输入 APPLY 删除列出的容器：' 'Type APPLY to remove the listed containers: ')" confirm
-        [ "$confirm" = APPLY ] || { say cancel; continue; }
+        read -r -p "$(ui_text '确认删除列出的容器？输入 y/n：' 'Confirm removing the listed containers? Enter y/n: ')" confirm
+        is_yes "$confirm" || { say cancel; continue; }
         docker container prune --force
         ;;
       4)
+        printf '%s\n' "$(ui_text '悬空镜像是没有标签且没有容器引用的镜像层；删除后需要时可重新拉取或构建。' 'Dangling images are untagged image layers not referenced by containers; they can be pulled or built again if needed.')"
         if ! have docker || ! docker info >/dev/null 2>&1; then printf '%s\n' "$(ui_text 'Docker 不可用。' 'Docker is unavailable.')"; continue; fi
         printf '%s\n' "$(ui_text '以下悬空镜像将被删除：' 'These dangling images will be removed:')"
         docker image ls --filter dangling=true
-        read -r -p "$(ui_text '输入 APPLY 删除悬空镜像：' 'Type APPLY to remove dangling images: ')" confirm
-        [ "$confirm" = APPLY ] || { say cancel; continue; }
+        read -r -p "$(ui_text '确认删除悬空镜像？输入 y/n：' 'Confirm removing dangling images? Enter y/n: ')" confirm
+        is_yes "$confirm" || { say cancel; continue; }
         docker image prune --force
         ;;
       *) printf '%s\n' "$(ui_text '无效选择。' 'Invalid choice.')"; continue ;;
@@ -919,11 +995,11 @@ ui_update_menu() {
   printf '%s\n' "$(ui_text '以下为基于本机软件包索引的更新预览；此预览不会联网或安装软件。' 'The following preview uses the local package index; it does not access the network or install packages.')"
   apt-get -s upgrade 2>/dev/null || true
   printf '%s\n' "$(ui_text '请检查上方模拟结果；此操作不会执行可能移除软件包的 full-upgrade。' 'Review the simulation above; this will not run full-upgrade, which may remove packages.')"
-  printf '\n%s\n' "$(ui_text '输入 APPLY 执行 apt-get update 和 apt-get upgrade。系统不会自动重启。输入 0 返回。' 'Type APPLY to run apt-get update and apt-get upgrade. The system will not reboot automatically. Type 0 to return.')"
+  printf '\n%s\n' "$(ui_text '输入 y 执行 apt-get update 和 apt-get upgrade（系统不会自动重启）；输入 n 或 0 返回。' 'Type y to run apt-get update and apt-get upgrade (the system will not reboot automatically); type n or 0 to return.')"
   local answer
   read -r -p '> ' answer || return
   case "$answer" in
-    APPLY)
+    [yY]|[yY][eE][sS])
       if ! root_required; then ui_pause; return; fi
       printf '%s\n' "$(ui_text '开始更新软件和内核。更新过程可能需要一些时间；不会自动重启。' 'Updating software and kernel packages. This may take a while; no automatic reboot will occur.')"
       if apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y; then
