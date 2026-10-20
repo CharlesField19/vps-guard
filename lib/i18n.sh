@@ -21,9 +21,7 @@ msg() {
     zh:recommend) echo '安全加固建议' ;; en:recommend) echo 'Hardening recommendations' ;;
     zh:key_missing) echo '未发现有效 SSH 公钥；暂时不能关闭密码登录。' ;; en:key_missing) echo 'No usable SSH public key found; password login must not be disabled yet.' ;;
     zh:root_password) echo 'root 密码登录已启用。' ;; en:root_password) echo 'Root password login is enabled.' ;;
-    zh:backup) echo '配置备份已创建' ;; en:backup) echo 'Configuration backup created' ;;
     zh:validated) echo '配置验证通过' ;; en:validated) echo 'Configuration validation passed' ;;
-    zh:rollback) echo '验证失败，正在回滚' ;; en:rollback) echo 'Validation failed; rolling back' ;;
     zh:cancel) echo '已取消，未修改系统。' ;; en:cancel) echo 'Cancelled; no system changes made.' ;;
     *) echo "$1" ;;
   esac
