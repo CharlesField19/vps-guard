@@ -6,7 +6,8 @@ ui_text() {
 }
 
 ui_pause() {
-  read -r -p "$(ui_text '按回车返回主菜单...' 'Press Enter to return to the main menu...')" _
+  printf '\n%s\n' "$(ui_text '操作完成。按回车返回主菜单；不会重新下载项目。' 'Operation complete. Press Enter to return to the main menu; the project will not be downloaded again.')"
+  read -r -p '> ' _
 }
 
 ui_main_menu() {
@@ -159,6 +160,7 @@ ui_ssh_firewall_menu() {
 }
 
 ui_apply_ssh_firewall() {
+  local config_file effective_config
   if ! root_required; then return 1; fi
   if ! have sshd; then
     printf '%s\n' "$(ui_text '未发现 sshd，无法修改 SSH。' 'sshd was not found; SSH cannot be changed.')"
@@ -177,6 +179,11 @@ ui_apply_ssh_firewall() {
 
   backup_begin || return 1
   backup_file /etc/ssh/sshd_config || return 1
+  if [ -d /etc/ssh/sshd_config.d ]; then
+    while IFS= read -r -d '' config_file; do
+      backup_file "$config_file" || return 1
+    done < <(find /etc/ssh/sshd_config.d -maxdepth 1 -type f -name '*.conf' -print0)
+  fi
   backup_file /etc/default/ufw || return 1
   backup_file /etc/ufw/user.rules || return 1
   backup_file /etc/ufw/user6.rules || return 1
@@ -192,9 +199,17 @@ ui_apply_ssh_firewall() {
     grep -q '^IPV6=' /etc/default/ufw || printf '\nIPV6=yes\n' >> /etc/default/ufw
   fi
 
+  # OpenSSH uses the first value found. Port directives in included drop-ins
+  # are read before directives later in sshd_config, so clear them too.
+  if [ -d /etc/ssh/sshd_config.d ]; then
+    while IFS= read -r -d '' config_file; do
+      sed -i -E '/^[[:space:]]*#?[[:space:]]*Port[[:space:]]+[0-9]+/d' "$config_file" || { say rollback; rollback_latest; return 1; }
+    done < <(find /etc/ssh/sshd_config.d -maxdepth 1 -type f -name '*.conf' -print0)
+  fi
   sed -i -E '/^[[:space:]]*#?[[:space:]]*Port[[:space:]]+[0-9]+/d' /etc/ssh/sshd_config
   printf '\nPort 20001\n' >> /etc/ssh/sshd_config
-  if ! sshd -t 2>/dev/null || ! sshd -T 2>/dev/null | grep -qx 'port 20001'; then
+  effective_config=$(sshd -T 2>/dev/null) || { say rollback; rollback_latest; return 1; }
+  if ! sshd -t 2>/dev/null || ! printf '%s\n' "$effective_config" | awk '$1 == "port" { count++; if ($2 != "20001") invalid=1 } END { exit !(count == 1 && !invalid) }'; then
     say rollback; rollback_latest; return 1
   fi
   if ! systemctl reload ssh 2>/dev/null && ! systemctl reload sshd 2>/dev/null; then
