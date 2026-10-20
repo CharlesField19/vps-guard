@@ -17,7 +17,7 @@
 直接运行：
 
 ```bash
-sudo bash vps-guard.sh ui
+cd /opt/vps-guard && sudo bash vps-guard.sh ui
 ```
 
 命令行方式：
