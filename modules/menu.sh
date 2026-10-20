@@ -68,12 +68,9 @@ ui_ipv6_menu() {
     case "$choice" in
       1)
         printf '%s\n' "$(ui_text '这只启用本机 IPv6 和 UFW IPv6 支持；云厂商必须同时提供 IPv6 网络。' 'This enables local IPv6 and UFW IPv6 support; the cloud provider must also provide IPv6 networking.')"
-        read -r -p "$(ui_text '输入 APPLY-IPV6 继续：' 'Type APPLY-IPV6 to continue: ')" confirm
-        [ "$confirm" = APPLY-IPV6 ] || { say cancel; continue; }
+        read -r -p "$(ui_text '输入 APPLY 继续：' 'Type APPLY to continue: ')" confirm
+        [ "$confirm" = APPLY ] || { say cancel; continue; }
         root_required || continue
-        if ! backup_begin || ! backup_file /etc/default/ufw || ! backup_file /etc/sysctl.d/99-vps-guard-ipv6.conf; then
-          continue
-        fi
         mkdir -p /etc/sysctl.d
         cat > /etc/sysctl.d/99-vps-guard-ipv6.conf <<'EOF'
 net.ipv6.conf.all.disable_ipv6 = 0
@@ -86,7 +83,7 @@ EOF
         if sysctl --system >/dev/null 2>&1 && [ "$(sysctl -n net.ipv6.conf.all.disable_ipv6 2>/dev/null)" = 0 ]; then
           printf '%s\n' "$(ui_text 'IPv6 配置已应用。请另外确认云厂商 IPv6 和安全组设置。' 'IPv6 configuration applied. Also verify the cloud IPv6 and security-group settings.')"
         else
-          say rollback; rollback_latest; rm -f /etc/sysctl.d/99-vps-guard-ipv6.conf
+          printf '%s\n' "$(ui_text 'IPv6 验证失败；未自动回滚配置。请检查 /etc/sysctl.d/99-vps-guard-ipv6.conf 和 /etc/default/ufw。' 'IPv6 validation failed; configuration was not automatically reverted. Check /etc/sysctl.d/99-vps-guard-ipv6.conf and /etc/default/ufw.')"
         fi
         ui_pause
         ;;
@@ -115,13 +112,10 @@ ui_bbr_menu() {
       1)
         available=$(sysctl -n net.ipv4.tcp_available_congestion_control 2>/dev/null || true)
         case " $available " in *' bbr '*) ;; *) printf '%s\n' "$(ui_text '当前内核不报告 BBR 可用，未修改配置。' 'The current kernel does not report BBR as available; no changes made.')"; ui_pause; continue ;; esac
-        read -r -p "$(ui_text '输入 APPLY-BBR 继续：' 'Type APPLY-BBR to continue: ')" confirm
-        [ "$confirm" = APPLY-BBR ] || { say cancel; continue; }
+        read -r -p "$(ui_text '输入 APPLY 继续：' 'Type APPLY to continue: ')" confirm
+        [ "$confirm" = APPLY ] || { say cancel; continue; }
         root_required || continue
-         if ! backup_begin || ! backup_file /etc/sysctl.d/99-vps-guard-network.conf; then
-           continue
-         fi
-         mkdir -p /etc/sysctl.d
+        mkdir -p /etc/sysctl.d
          cat > /etc/sysctl.d/99-vps-guard-network.conf <<'EOF'
 net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbr
@@ -129,7 +123,7 @@ EOF
         if sysctl --system >/dev/null 2>&1 && [ "$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)" = bbr ] && [ "$(sysctl -n net.core.default_qdisc 2>/dev/null)" = fq ]; then
           printf '%s\n' "$(ui_text 'BBR + fq 已启用并验证。' 'BBR + fq enabled and verified.')"
         else
-          say rollback; rollback_latest; rm -f /etc/sysctl.d/99-vps-guard-network.conf
+          printf '%s\n' "$(ui_text 'BBR 验证失败；未自动回滚配置。请检查 /etc/sysctl.d/99-vps-guard-network.conf。' 'BBR validation failed; configuration was not automatically reverted. Check /etc/sysctl.d/99-vps-guard-network.conf.')"
         fi
         ui_pause
         ;;
@@ -146,13 +140,97 @@ ui_ssh_firewall_menu() {
     printf '%s\n' \
       "1) $(ui_text '查看当前状态（只读）' 'View current status (read-only)')" \
       "2) $(ui_text '准备并应用 SSH 20001 + 防火墙基础规则' 'Apply SSH 20001 + basic firewall rules')" \
-      "3) $(ui_text '回滚最近一次配置备份' 'Rollback latest configuration backup')" \
+      "3) $(ui_text '管理 UFW 端口规则（新增 / 删除）' 'Manage UFW port rules (add / delete)')" \
       "0) $(ui_text '返回主菜单' 'Back to main menu')"
     read -r -p '> ' choice || return
     case "$choice" in
       1) audit_ssh; audit_network; ui_pause ;;
       2) ui_apply_ssh_firewall; ui_pause ;;
-      3) rollback; ui_pause ;;
+      3) ui_ufw_rules_menu ;;
+      0) return ;;
+      *) printf '%s\n' "$(ui_text '无效选择。' 'Invalid choice.')" ;;
+    esac
+  done
+}
+
+ui_ufw_rules_menu() {
+  local choice protocol port confirm rules rule_no
+  if ! root_required; then return 1; fi
+  if ! have ufw; then
+    printf '%s\n' "$(ui_text '未安装 UFW。' 'UFW is not installed.')"
+    ui_pause
+    return 1
+  fi
+
+  while true; do
+    printf '\n%s\n' "$(ui_text 'UFW 端口规则管理' 'UFW port rules')"
+    printf '%s\n' \
+      "1) $(ui_text '新增端口放行规则' 'Add an allow rule')" \
+      "2) $(ui_text '查看并删除现有规则' 'List and delete an existing rule')" \
+      "0) $(ui_text '返回' 'Back')"
+    read -r -p '> ' choice || return
+    case "$choice" in
+      1)
+        read -r -p "$(ui_text '输入端口号（1-65535）：' 'Port number (1-65535): ')" port
+        case "$port" in ''|*[!0-9]*) printf '%s\n' "$(ui_text '端口号无效。' 'Invalid port number.')"; continue ;; esac
+        if [ "${#port}" -gt 5 ]; then
+          printf '%s\n' "$(ui_text '端口号必须在 1-65535 之间。' 'Port must be between 1 and 65535.')"
+          continue
+        fi
+        if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+          printf '%s\n' "$(ui_text '端口号必须在 1-65535 之间。' 'Port must be between 1 and 65535.')"
+          continue
+        fi
+        printf '%s\n' \
+          "1) TCP" \
+          "2) UDP" \
+          "3) TCP + UDP"
+        read -r -p '> ' protocol || return
+        case "$protocol" in
+          1) protocol=tcp ;;
+          2) protocol=udp ;;
+          3) protocol=both ;;
+          *) printf '%s\n' "$(ui_text '无效协议选择。' 'Invalid protocol choice.')"; continue ;;
+        esac
+        printf '%s\n' "$(ui_text "即将放行端口 $port/$protocol。" "About to allow port $port/$protocol.")"
+        read -r -p "$(ui_text '输入 APPLY 确认：' 'Type APPLY to confirm: ')" confirm
+        [ "$confirm" = APPLY ] || { say cancel; continue; }
+        if [ "$protocol" = both ]; then
+          if ! ufw allow "$port/tcp" || ! ufw allow "$port/udp"; then
+            printf '%s\n' "$(ui_text '添加规则失败；未自动回滚，可能已有部分规则生效。' 'Adding rules failed; no automatic rollback was performed, and a partial rule may have been applied.')"
+          else
+            printf '%s\n' "$(ui_text '规则已新增。' 'Rules added.')"
+          fi
+        elif ufw allow "$port/$protocol"; then
+          printf '%s\n' "$(ui_text '规则已新增。' 'Rule added.')"
+        else
+          printf '%s\n' "$(ui_text '添加规则失败；未自动回滚。' 'Adding the rule failed; no automatic rollback was performed.')"
+        fi
+        ui_pause
+        ;;
+      2)
+        rules=$(ufw status numbered 2>/dev/null) || { printf '%s\n' "$(ui_text '无法读取 UFW 规则。' 'Unable to read UFW rules.')"; continue; }
+        printf '%s\n' "$rules"
+        if ! printf '%s\n' "$rules" | grep -Eq '^\[[[:space:]]*[0-9]+\]'; then
+          printf '%s\n' "$(ui_text '没有可删除的编号规则。' 'No numbered rules to delete.')"
+          continue
+        fi
+        read -r -p "$(ui_text '输入要删除的规则编号（0 返回）：' 'Rule number to delete (0 to return): ')" rule_no
+        [ "$rule_no" = 0 ] && continue
+        case "$rule_no" in ''|*[!0-9]*) printf '%s\n' "$(ui_text '编号无效。' 'Invalid rule number.')"; continue ;; esac
+        if ! printf '%s\n' "$rules" | grep -Eq "^\\[[[:space:]]*$rule_no\\]"; then
+          printf '%s\n' "$(ui_text '找不到该规则编号。' 'Rule number not found.')"
+          continue
+        fi
+        read -r -p "$(ui_text '输入 APPLY 确认删除该规则：' 'Type APPLY to confirm deleting this rule: ')" confirm
+        [ "$confirm" = APPLY ] || { say cancel; continue; }
+        if ufw --force delete "$rule_no"; then
+          printf '%s\n' "$(ui_text '规则已删除。' 'Rule deleted.')"
+        else
+          printf '%s\n' "$(ui_text '删除规则失败；未执行自动回滚。' 'Deleting the rule failed; no automatic rollback was performed.')"
+        fi
+        ui_pause
+        ;;
       0) return ;;
       *) printf '%s\n' "$(ui_text '无效选择。' 'Invalid choice.')" ;;
     esac
@@ -174,26 +252,15 @@ ui_apply_ssh_firewall() {
   printf '\n%s\n' "$(ui_text '将执行：允许 20001、80、443；设置 UFW 入站默认拒绝、出站允许；将 SSH 监听端口设为 20001。' 'Planned: allow 20001, 80 and 443; set UFW default incoming deny and outgoing allow; set SSH to listen on port 20001.')"
   printf '%s\n' "$(ui_text '旧 SSH 端口规则不会在本次操作中删除。请从第二个终端验证 20001 登录成功后，再手动清理旧规则。' 'The old SSH port rule will not be removed in this operation. Verify port 20001 from a second terminal before cleaning up the old rule.')"
   printf '%s\n' "$(ui_text '风险：高；可能影响远程访问。确认 VPS 控制台/救援入口可用。' 'Risk: HIGH; remote access may be affected. Confirm that a VPS console/rescue path is available.')"
-  read -r -p "$(ui_text '输入 APPLY-SSH-FIREWALL 继续：' 'Type APPLY-SSH-FIREWALL to continue: ')" confirm
-  [ "$confirm" = APPLY-SSH-FIREWALL ] || { printf '%s\n' "$(msg cancel)"; return 1; }
-
-  backup_begin || return 1
-  backup_file /etc/ssh/sshd_config || return 1
-  if [ -d /etc/ssh/sshd_config.d ]; then
-    while IFS= read -r -d '' config_file; do
-      backup_file "$config_file" || return 1
-    done < <(find /etc/ssh/sshd_config.d -maxdepth 1 -type f -name '*.conf' -print0)
-  fi
-  backup_file /etc/default/ufw || return 1
-  backup_file /etc/ufw/user.rules || return 1
-  backup_file /etc/ufw/user6.rules || return 1
-  say backup
+  read -r -p "$(ui_text '输入 APPLY 继续：' 'Type APPLY to continue: ')" confirm
+  [ "$confirm" = APPLY ] || { printf '%s\n' "$(msg cancel)"; return 1; }
 
   if ! ufw allow 20001/tcp || ! ufw allow 80/tcp || ! ufw allow 443/tcp; then
-    say rollback; rollback_latest; return 1
+    printf '%s\n' "$(ui_text 'UFW 规则设置失败；未自动回滚，请检查当前规则。' 'Failed to set UFW rules; no automatic rollback was performed. Check the current rules.')"
+    return 1
   fi
-  ufw default deny incoming || { say rollback; rollback_latest; return 1; }
-  ufw default allow outgoing || { say rollback; rollback_latest; return 1; }
+  ufw default deny incoming || { printf '%s\n' "$(ui_text '设置 UFW 入站策略失败；未自动回滚。' 'Failed to set UFW incoming policy; no automatic rollback was performed.')"; return 1; }
+  ufw default allow outgoing || { printf '%s\n' "$(ui_text '设置 UFW 出站策略失败；未自动回滚。' 'Failed to set UFW outgoing policy; no automatic rollback was performed.')"; return 1; }
   if [ -f /etc/default/ufw ]; then
     sed -i -E 's/^[[:space:]]*IPV6=.*/IPV6=yes/' /etc/default/ufw
     grep -q '^IPV6=' /etc/default/ufw || printf '\nIPV6=yes\n' >> /etc/default/ufw
@@ -203,19 +270,21 @@ ui_apply_ssh_firewall() {
   # are read before directives later in sshd_config, so clear them too.
   if [ -d /etc/ssh/sshd_config.d ]; then
     while IFS= read -r -d '' config_file; do
-      sed -i -E '/^[[:space:]]*#?[[:space:]]*Port[[:space:]]+[0-9]+/d' "$config_file" || { say rollback; rollback_latest; return 1; }
+      sed -i -E '/^[[:space:]]*#?[[:space:]]*Port[[:space:]]+[0-9]+/d' "$config_file" || { printf '%s\n' "$(ui_text '修改 SSH drop-in 配置失败；未自动回滚。' 'Failed to update the SSH drop-in configuration; no automatic rollback was performed.')"; return 1; }
     done < <(find /etc/ssh/sshd_config.d -maxdepth 1 -type f -name '*.conf' -print0)
   fi
   sed -i -E '/^[[:space:]]*#?[[:space:]]*Port[[:space:]]+[0-9]+/d' /etc/ssh/sshd_config
   printf '\nPort 20001\n' >> /etc/ssh/sshd_config
-  effective_config=$(sshd -T 2>/dev/null) || { say rollback; rollback_latest; return 1; }
+  effective_config=$(sshd -T 2>/dev/null) || { printf '%s\n' "$(ui_text '读取 SSH 生效配置失败；未自动回滚。' 'Failed to read effective SSH configuration; no automatic rollback was performed.')"; return 1; }
   if ! sshd -t 2>/dev/null || ! printf '%s\n' "$effective_config" | awk '$1 == "port" { count++; if ($2 != "20001") invalid=1 } END { exit !(count == 1 && !invalid) }'; then
-    say rollback; rollback_latest; return 1
+    printf '%s\n' "$(ui_text 'SSH 配置验证失败；未自动回滚，请检查 SSH 配置。' 'SSH configuration validation failed; no automatic rollback was performed. Check SSH configuration.')"
+    return 1
   fi
   if ! systemctl reload ssh 2>/dev/null && ! systemctl reload sshd 2>/dev/null; then
-    say rollback; rollback_latest; return 1
+    printf '%s\n' "$(ui_text '重载 SSH 失败；未自动回滚，请检查 SSH 服务状态。' 'Failed to reload SSH; no automatic rollback was performed. Check the SSH service status.')"
+    return 1
   fi
-  ufw --force enable || { say rollback; rollback_latest; return 1; }
+  ufw --force enable || { printf '%s\n' "$(ui_text '启用 UFW 失败；未自动回滚。' 'Failed to enable UFW; no automatic rollback was performed.')"; return 1; }
   printf '%s\n' "$(ui_text '已应用。请立即从第二个终端测试：ssh -p 20001 用户@服务器。确认成功后，再清理旧 SSH 端口规则。' 'Applied. Immediately test from a second terminal: ssh -p 20001 user@server. After it succeeds, clean up the old SSH port rule.')"
 }
 
