@@ -19,11 +19,12 @@ A basic inspection and management tool for Ubuntu/Debian VPS instances. This gui
 | 9 Users/keys | Lists users/sudo, creates a user, adds a key, or disables root password authentication | Inspect/configure |
 | 10 Resources | Shows load, memory, disk, inodes, and CPU/memory-heavy processes | Read-only |
 | 11 Logs | SSH, Fail2Ban, UFW-related denied kernel messages, and error-priority logs | Read-only |
-| 12 Docker | Lists containers and starts/stops/restarts the selected one | Inspect/control |
+| 12 Docker | Lists/controls containers, tails logs, and tests Nginx config before an explicitly confirmed reload | Inspect/control |
 | 13 Scheduled tasks | Lists timers and views/adds/deletes root crontab lines | Inspect/configure |
 | 14 Cleanup | APT cache, systemd journal, stopped containers, dangling images | Cleanup |
 | 15 Network check | Addresses, routes, DNS, public IPv4/IPv6 lookup | Read-only |
 | 16 Export status | Prints SSH/network audits, Fail2Ban status, and running Docker summary to the terminal | Read-only output |
+| 17 Extended diagnostics | Largest directories, failed units/reboot status, HTTP/TLS, bounded route trace | Read-only/optional network requests |
 
 The sections below expand the exact actions in each submenu. Main menu option `0` exits.
 
@@ -111,6 +112,8 @@ Number mapping: 1 SSH service logs; 2 Fail2Ban service logs; 3 kernel messages c
 
 ### 12. Docker management
 
+The menu can show recent logs for a selected container (100 lines by default, capped at 1,000). Logs may contain sensitive information; redact before sharing. The Nginx option runs `nginx -t` inside a selected running container. Only after a successful test does it ask whether to run `nginx -s reload`. A failed test never triggers reload, and the tool does not edit the config or restart the Nginx container.
+
 Shows all Docker containers, including stopped ones, with names, status, and port mappings. You can start, stop, or restart a selected container. A port mapping forwards a host port to a container port; a mapping bound to all addresses may be public, so also check the firewall and application authentication. Stop/restart interrupts the application. This menu does not edit container configuration, images, or volumes. If Docker is unavailable, the menu remains available and option 2 can install/ensure Docker or upgrade installed Docker packages.
 
 The list is shown first. Option 1 enters container controls; select a container, then choose 1 start, 2 stop, or 3 restart. Option 2 offers install/ensure-installed or upgrade-only actions. Installation/update first runs `apt-get update`, installs `docker.io` by default and also `docker-compose-plugin` when available from the configured package sources, requires `y` (case-insensitive) to confirm, and then attempts to enable and start Docker. Enter `n` or anything else to cancel. After confirmation, only the selected container is affected. Option 0 returns to the previous menu.
@@ -146,6 +149,13 @@ Output order: interface addresses, IPv4/IPv6 routes, `resolvectl` (or `/etc/reso
 ### 16. Export configuration status to terminal
 
 Prints SSH and network/UFW audit information, Fail2Ban status, and the status/ports of running Docker containers in sequence for copying into a troubleshooting conversation. This is not a file backup or a complete system export, and it does not upload data. Terminal output can still contain sensitive addresses or ports; review and redact it before sharing.
+
+### 17. Extended diagnostics
+
+- **Disk usage**: Shows one-level usage under `/var`, `/opt`, and `/home`, plus Docker storage usage when available. It does not delete files.
+- **Failed services/reboot status**: Shows systemd failed units, the Debian/Ubuntu reboot-required marker, and up to 80 error-priority journal entries from the last 24 hours. It never reboots automatically.
+- **HTTP/TLS**: Accepts a hostname or HTTP(S) URL; requests have a 10-second timeout. Shows HTTP status, remote address, TLS verification result, and certificate subject/validity when available. It does not change DNS, certificates, or site config.
+- **Route trace**: Runs only if `mtr` or `traceroute` is already installed, with bounded probes/hops and runtime. Dependencies are never installed automatically. Intermediate packet loss may be ICMP rate limiting and is not by itself proof of a route fault.
 
 ## Run
 
