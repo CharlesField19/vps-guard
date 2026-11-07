@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -u
+printf 'ss %s\n' "$*" >> "${MOCK_LOG:-/dev/null}"
+printf '%s\n' "${MOCK_SS_OUTPUT:-LISTEN 0 128 0.0.0.0:22 0.0.0.0:*}"

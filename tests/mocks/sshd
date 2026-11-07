@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -u
+printf 'sshd %s\n' "$*" >> "${MOCK_LOG:-/dev/null}"
+cfg_dir=${VPS_GUARD_SSH_DIR:-/etc/ssh}
+cfg=$cfg_dir/sshd_config
+
+case "$1" in
+  -t)
+    exit "${MOCK_SSHD_TEST_FAIL:-0}"
+    ;;
+  -T)
+    is_context=0
+    for arg in "$@"; do
+      [ "$arg" = -C ] && is_context=1
+    done
+    if [ "$is_context" -eq 1 ]; then
+      value=$(awk 'tolower($1) == "permitrootlogin" { print tolower($2); exit }' "$cfg" "$cfg_dir"/sshd_config.d/*.conf 2>/dev/null)
+      echo "permitrootlogin ${value:-prohibit-password}"
+      exit 0
+    fi
+    found=0
+    for file in "$cfg" "$cfg_dir"/sshd_config.d/*.conf; do
+      [ -f "$file" ] || continue
+      while IFS= read -r line; do
+        case "$line" in
+          [Pp][Oo][Rr][Tt]\ *)
+            echo "port ${line#* }"
+            found=1
+            ;;
+        esac
+      done < "$file"
+    done
+    [ "$found" -eq 1 ] || echo 'port 22'
+    value=$(awk 'tolower($1) == "permitrootlogin" { print tolower($2); exit }' "$cfg" "$cfg_dir"/sshd_config.d/*.conf 2>/dev/null)
+    echo "permitrootlogin ${value:-prohibit-password}"
+    exit 0
+    ;;
+esac
+exit 0

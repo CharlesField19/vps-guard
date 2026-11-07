@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-LANGUAGE=${LANGUAGE:-zh}
+VPS_GUARD_LANG=${VPS_GUARD_LANG:-zh}
 
 msg() {
-  case "$LANGUAGE:$1" in
+  case "$VPS_GUARD_LANG:$1" in
     zh:app) echo 'VPS Guard VPS 安全管理工具' ;; en:app) echo 'VPS Guard VPS Security Tool' ;;
     zh:audit) echo '只读安全审计' ;; en:audit) echo 'Read-only security audit' ;;
     zh:system) echo '系统信息' ;; en:system) echo 'System information' ;;

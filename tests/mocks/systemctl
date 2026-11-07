@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -u
+printf 'systemctl %s\n' "$*" >> "${MOCK_LOG:-/dev/null}"
+
+case "$1" in
+  is-active)
+    if [ "${MOCK_SYSTEMCTL_ACTIVE:-0}" = 1 ]; then
+      exit 0
+    fi
+    exit 3
+    ;;
+  show)
+    case "$*" in
+      *DropInPaths*) echo "${MOCK_DROPIN_PATHS:-}" ;;
+      *Listen*) echo "${MOCK_LISTEN:-}" ;;
+    esac
+    ;;
+  reload)
+    exit "${MOCK_SYSTEMCTL_RELOAD_FAIL:-0}"
+    ;;
+  restart)
+    exit "${MOCK_SYSTEMCTL_RESTART_FAIL:-0}"
+    ;;
+esac
+exit 0

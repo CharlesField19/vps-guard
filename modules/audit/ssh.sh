@@ -3,7 +3,7 @@ audit_ssh() {
   heading ssh
   if ! have sshd; then notice 'sshd not found / 未发现 sshd'; return; fi
   local effective
-  effective=$(sshd -T 2>/dev/null) || { notice 'Unable to read effective sshd configuration / 无法读取 sshd 生效配置'; return; }
+  effective=$(sshd_effective_config) || { notice 'Unable to read effective sshd configuration / 无法读取 sshd 生效配置'; return; }
   printf '%s\n' "$effective" | grep -E '^(port|permitrootlogin|passwordauthentication|pubkeyauthentication|maxauthtries|allowusers|allowgroups)' || true
 
   if printf '%s\n' "$effective" | grep -qx 'permitrootlogin yes'; then danger "$(msg root_password)"; fi
@@ -11,7 +11,7 @@ audit_ssh() {
   if printf '%s\n' "$effective" | grep -qx 'pubkeyauthentication yes'; then pass 'Public-key authentication enabled / 已启用公钥认证'; else danger 'Public-key authentication disabled / 公钥认证已禁用'; fi
 
   local keys_found=0 key_file key_dir
-  for key_file in /root/.ssh/authorized_keys /home/*/.ssh/authorized_keys; do
+  for key_file in "$VPS_GUARD_ROOT_AUTHORIZED_KEYS" /home/*/.ssh/authorized_keys; do
     [ -s "$key_file" ] || continue
     keys_found=1
     key_dir=${key_file%/authorized_keys}

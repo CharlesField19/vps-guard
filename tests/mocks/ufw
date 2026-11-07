@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -u
+printf 'ufw %s\n' "$*" >> "${MOCK_LOG:-/dev/null}"
+
+case "$1" in
+  status)
+    if [ "${MOCK_UFW_INACTIVE:-0}" = 1 ]; then
+      echo 'Status: inactive'
+      exit 0
+    fi
+    echo 'Status: active'
+    echo "Default: ${MOCK_UFW_INCOMING:-deny} (incoming), ${MOCK_UFW_OUTGOING:-allow} (outgoing), deny (routed)"
+    ;;
+  allow)
+    exit "${MOCK_UFW_ALLOW_FAIL:-0}"
+    ;;
+  default)
+    case "${2:-}" in
+      deny) exit "${MOCK_UFW_DENY_FAIL:-0}" ;;
+      allow) exit "${MOCK_UFW_ALLOW_DEFAULT_FAIL:-0}" ;;
+    esac
+    ;;
+  --force)
+    exit "${MOCK_UFW_ENABLE_FAIL:-0}"
+    ;;
+esac
+exit 0

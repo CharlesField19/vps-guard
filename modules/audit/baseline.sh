@@ -14,7 +14,7 @@ audit_baseline() {
     fi
   fi
 
-  for file in /etc/passwd /etc/shadow /etc/group /etc/gshadow /etc/sudoers /etc/ssh/sshd_config; do
+  for file in /etc/passwd /etc/shadow /etc/group /etc/gshadow /etc/sudoers "$VPS_GUARD_SSH_DIR/sshd_config"; do
     [ -e "$file" ] || continue
     mode=$(stat -c '%a' "$file" 2>/dev/null) || continue
     printf 'Permission / 权限: %s mode=%s\n' "$file" "$mode"
