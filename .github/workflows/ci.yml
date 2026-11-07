@@ -1,0 +1,25 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install checks
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck openssh-server
+
+      - name: Syntax
+        run: make syntax
+
+      - name: ShellCheck
+        run: make lint
+
+      - name: Regression tests
+        run: sudo bash tests/run.sh
